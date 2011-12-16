@@ -86,10 +86,6 @@ uint32_t relative_intensity(uint8_t color){
   return stop-start;
 }
 
-uint32_t aproxrt(uint32_t x){
-  return x;
-}
-
 void observe_color(void){
   uint32_t baseline = relative_intensity(0);
   uint32_t r        = relative_intensity(RED)-baseline;
@@ -98,24 +94,24 @@ void observe_color(void){
   baseline  = r*r;
   baseline += g*g;
   baseline += b*b;
-  r <<= 8;
-  g <<= 8;
-  b <<= 8;
   // Divide everything by the aproximate square root of baseline. Make sure to overshoot.
-  baseline = aproxrt(baseline);
-  r /= baseline;
-  g /= baseline;
-  b /= baseline;
+  uint8_t log = 1; // base two integer log of baseline, plus one.
+  while(baseline > 0){
+    baseline >>= 1;
+    log++;
+  }
+  // Apparently
+  r <<= 8;
+  r >>= log;
+  g <<= 8;
+  g >>= log;
+  b <<= 8;
+  b >>= log;
   // Then clamp everything to 0..255
   red   = (r > 255)? 255 : r;
   green = (g > 255)? 255 : g;
   blue  = (b > 255)? 255 : b;
 }
-
-
-
-
-
 
 #define PORTB_MASK 0b00000111
 
