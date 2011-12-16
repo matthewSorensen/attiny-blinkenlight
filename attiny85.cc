@@ -16,7 +16,7 @@ static uint8_t red;
 static uint8_t green;
 static uint8_t blue;
 
-// It seems as if the version of the arduino toolchain that can
+// It seems as if the version of the Arduino toolchain that can
 // deal with attiny85s can't deal with EEMEM directives. So we hardcode 
 // all of the addresses...
 #define RING_BUFFER_LEN 8
@@ -48,7 +48,7 @@ void writeColor(uint8_t color, uint8_t* base){
     }
     loc++;
   }
-  // Otherwise, nuke the last byte with 0, and write the new value to the begining
+  // Otherwise, nuke the last byte with 0, and write the new value to the beginning
   if(0 != eeprom_read_byte(loc))
     eeprom_write_byte(loc,0);
   if(color != 0)
@@ -64,6 +64,57 @@ uint8_t readColor(uint8_t* base){
   }
   return 0;
 }
+
+/* Color observation... This is, of course, meh and ultimately rather subjective.
+Based on "Very Low-Cost Sensing and Communication Using Bidirectional LEDs" - Mitsubishi Electric Research Laboratories
+Fortunately, we don't have to worry about the relative intensities of the different LEDs.
+*/
+uint32_t relative_intensity(uint8_t color){
+  // Illuminate the sample with the relevant color
+  if(color > 0) PORTB |= color;
+  // Charge the LED-qua-capacitor 
+  DDRB  |= SENSOR;
+  PORTB |= SENSOR;  
+  /* Set the cathode to high-impedance input mode, and wait for the photocurrent to
+     discharge the device. */
+  DDRB  &= ~SENSOR;
+  PORTB &= ~SENSOR;
+  uint32_t start = micros();
+  while(PINB & SENSOR);
+  uint32_t stop = micros();
+  if(color > 0) PORTB &= ~color;
+  return stop-start;
+}
+
+uint32_t aproxrt(uint32_t x){
+  return x;
+}
+
+void observe_color(void){
+  uint32_t baseline = relative_intensity(0);
+  uint32_t r        = relative_intensity(RED)-baseline;
+  uint32_t g        = relative_intensity(GREEN)-baseline;
+  uint32_t b        = relative_intensity(BLUE)-baseline;
+  baseline  = r*r;
+  baseline += g*g;
+  baseline += b*b;
+  r <<= 8;
+  g <<= 8;
+  b <<= 8;
+  // Divide everything by the aproximate square root of baseline. Make sure to overshoot.
+  baseline = aproxrt(baseline);
+  r /= baseline;
+  g /= baseline;
+  b /= baseline;
+  // Then clamp everything to 0..255
+  red   = (r > 255)? 255 : r;
+  green = (g > 255)? 255 : g;
+  blue  = (b > 255)? 255 : b;
+}
+
+
+
+
 
 
 #define PORTB_MASK 0b00000111
@@ -88,17 +139,14 @@ void setup()
   // Initialize pin modes: set pin 0, 1 and 2 to outputs.
   DDRB = 0b00000111;
   PRR = _BV(PRADC); // Turn off the ADC
+  checkAndInitialize();
   if(PINB & SWITCH){
     // Enter the rather complex color observation mode, write the new ones out to the EPROM.
-    // Test code right now.
-    red   = readColor((uint8_t*) RED_BASE)+93;
-    green = readColor((uint8_t*) GREEN_BASE)+121;
-    blue  = readColor((uint8_t*) BLUE_BASE)+37;
+    observe_color();
     writeColor(red, (uint8_t*) RED_BASE);
     writeColor(green, (uint8_t*) GREEN_BASE);
     writeColor(blue, (uint8_t*) BLUE_BASE);
   }else{// Read the old values from the eeprom, initializing it if needed.
-    checkAndInitialize();
     red   = readColor((uint8_t*) RED_BASE);
     green = readColor((uint8_t*) GREEN_BASE);
     blue  = readColor((uint8_t*) BLUE_BASE);
